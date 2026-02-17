@@ -228,6 +228,8 @@ const difficultyColor = {
   hard: "#ef4444",
 };
 
+const allowedGpxFolders = new Set(["A1", "A2"]);
+
 const listEl = document.getElementById("courseList");
 const detailEl = document.getElementById("detailPanel");
 const totalCountEl = document.getElementById("totalCount");
@@ -240,11 +242,11 @@ const distanceFilterEl = document.getElementById("distanceFilter");
 const distanceValueEl = document.getElementById("distanceValue");
 const sortByEl = document.getElementById("sortBy");
 const favoriteOnlyEl = document.getElementById("favoriteOnly");
-const loadDataBtn = document.getElementById("loadDataBtn");
 const fitAllBtn = document.getElementById("fitAllBtn");
 const resetFiltersBtn = document.getElementById("resetFiltersBtn");
 const jsonInput = document.getElementById("jsonInput");
 const gpxInput = document.getElementById("gpxInput");
+const statusMessageEl = document.getElementById("statusMessage");
 
 const map = L.map("map", { zoomControl: true }).setView([36.55, 127.9], 8);
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
@@ -279,6 +281,26 @@ function hashString(text) {
 
 function parseLatLng(s) {
   return [Number(s.lat), Number(s.lng)];
+}
+
+function setStatusMessage(message, type = "info") {
+  if (!statusMessageEl) return;
+  const text = String(message || "").trim();
+  if (!text) {
+    statusMessageEl.textContent = "";
+    statusMessageEl.className = "status";
+    return;
+  }
+  statusMessageEl.textContent = text;
+  statusMessageEl.className = `status status--${type}`;
+}
+
+function getCourseSourceLabel(course) {
+  const items = [course?.sourceCategory, course?.sourceFolder]
+    .filter(Boolean)
+    .map((value) => String(value).trim())
+    .filter(Boolean);
+  return [...new Set(items)].join(" / ");
 }
 
 function findMountainReference(name) {
@@ -430,6 +452,7 @@ function normalizeCourse(course) {
     name: course.name,
     region: course.region,
     sourceFolder: course.sourceFolder || "",
+    sourceCategory: course.sourceCategory || "",
     sourceFile: course.sourceFile || "",
     elevation: finalElevation,
     difficulty,
@@ -445,7 +468,7 @@ function normalizeCourse(course) {
   };
 }
 
-let courses = rawCourses.map(normalizeCourse);
+let courses = [];
 
 function refreshRegionFilterOptions() {
   const previousValue = regionFilterEl.value;
@@ -472,7 +495,7 @@ function refreshFolderFilterOptions() {
   const folders = Array.from(
     new Set(
       courses
-        .map((x) => String(x.sourceFolder || "").trim())
+        .map((x) => String(x.sourceCategory || x.sourceFolder || "").trim())
         .filter(Boolean),
     ),
   ).sort();
@@ -528,6 +551,14 @@ function parseMountainNameFromFileName(fileName) {
   return firstToken;
 }
 
+function detectA1A2Folder(segments) {
+  for (let i = segments.length - 2; i >= 0; i -= 1) {
+    const token = String(segments[i]).trim().toUpperCase();
+    if (allowedGpxFolders.has(token)) return token;
+  }
+  return "";
+}
+
 function getGpxFileMeta(file) {
   const relativePath = String(file?.webkitRelativePath || file?.name || "").trim();
   const normalizedPath = relativePath.replace(/\\/g, "/").trim();
@@ -535,23 +566,30 @@ function getGpxFileMeta(file) {
   const fileName = segments.length ? segments[segments.length - 1] : String(file?.name || "");
   const parentCandidate = segments.length >= 2 ? segments[segments.length - 2] : "";
   const parsedTitle = parseMountainNameFromFileName(fileName);
-  const folderName = parentCandidate && parentCandidate !== "100대명산" && parentCandidate !== parsedTitle
+  const sourceCategory = detectA1A2Folder(segments);
+  const isCategoryParent =
+    parentCandidate && sourceCategory && parentCandidate.toUpperCase() === sourceCategory;
+  const folderName = parentCandidate && !isCategoryParent && parentCandidate !== parsedTitle
     ? parentCandidate
     : parsedTitle;
 
   return {
     fileName,
     folderName,
+    sourceCategory,
     relativePath: normalizedPath,
   };
 }
 
-function getCourseFromGpxFeature(node, fileName, sourceFolder, fallbackIndex) {
+function getCourseFromGpxFeature(node, fileMeta, fallbackIndex) {
+  const fileMetaSafe = fileMeta || {};
+  const fileName = fileMetaSafe.fileName || "unknown.gpx";
   const pointTag = (node.localName || "").toLowerCase() === "trk" ? "trkpt" : "rtept";
   const { route: parsedRoute, elevations } = parseGpxRoutePoints(node, pointTag);
   if (parsedRoute.length < 2) return null;
 
-  const fileTitle = sourceFolder || parseMountainNameFromFileName(fileName);
+  const sourceFolder = fileMetaSafe.folderName || "";
+  const fileTitle = parseMountainNameFromFileName(fileName);
   const rawName = getFirstText(node, "name").replace(/\.gpx$/i, "").trim();
   const fallbackTitle = `${fileTitle || "산"} ${fallbackIndex + 1}`;
   const name = rawName || fallbackTitle;
@@ -571,6 +609,7 @@ function getCourseFromGpxFeature(node, fileName, sourceFolder, fallbackIndex) {
     name,
     region: regionCandidate || ref?.region || "",
     sourceFolder: sourceFolder || "",
+    sourceCategory: fileMetaSafe.sourceCategory || "",
     sourceFile: fileName,
     elevation,
     route: parsedRoute,
@@ -584,6 +623,7 @@ function getCourseFromGpxFeature(node, fileName, sourceFolder, fallbackIndex) {
 function parseGpxFile(text, fileMeta) {
   const fileName = fileMeta?.fileName || "unknown.gpx";
   const sourceFolder = fileMeta?.folderName || "";
+  const sourceCategory = fileMeta?.sourceCategory || "";
   const parser = new DOMParser();
   const xml = parser.parseFromString(text, "application/xml");
   const parseErr = xml.getElementsByTagName("parsererror");
@@ -600,7 +640,11 @@ function parseGpxFile(text, fileMeta) {
   const coursesFromFile = [];
   if (hasTrack) {
     trackNodes.forEach((node, index) => {
-      const course = getCourseFromGpxFeature(node, fileName, sourceFolder, index);
+      const course = getCourseFromGpxFeature(
+        node,
+        { ...fileMeta, folderName: sourceFolder, fileName, sourceCategory },
+        index,
+      );
       if (course) {
         coursesFromFile.push(course);
       }
@@ -634,6 +678,7 @@ function parseGpxFile(text, fileMeta) {
           name: fileTitle || "산",
           region: ref?.region || "",
           sourceFolder,
+          sourceCategory,
           sourceFile: fileName,
           elevation:
             Number.isFinite(maxElevation)
@@ -673,13 +718,15 @@ function filterCourses() {
   const regionKeyword = state.region;
   const folderKeyword = state.folder;
   const filtered = courses.filter((course) => {
+    const courseFolder = String(course.sourceCategory || course.sourceFolder || "");
     const matchSearch =
       !query ||
       course.name.toLowerCase().includes(query) ||
       course.region.toLowerCase().includes(query) ||
-      course.sourceFolder.toLowerCase().includes(query);
+      courseFolder.toLowerCase().includes(query) ||
+      course.sourceFile.toLowerCase().includes(query);
     const matchRegion = !regionKeyword || course.region.includes(regionKeyword);
-    const matchFolder = !folderKeyword || course.sourceFolder === folderKeyword;
+    const matchFolder = !folderKeyword || courseFolder === folderKeyword;
     const matchDifficulty =
       state.difficulty === "all" || course.difficulty === state.difficulty;
     const matchDistance = course.lengthKm <= state.maxDistance;
@@ -727,7 +774,7 @@ function drawMap(items) {
     }).addTo(map);
 
     marker.bindPopup(
-      `<strong>${course.name}</strong><br/>${course.region}${course.sourceFolder ? ` · ${course.sourceFolder}` : ""}<br/>난이도: ${course.difficultyText}<br/>거리: ${course.lengthKm}km`,
+      `<strong>${course.name}</strong><br/>${course.region}${getCourseSourceLabel(course) ? ` · ${getCourseSourceLabel(course)}` : ""}<br/>난이도: ${course.difficultyText}<br/>거리: ${course.lengthKm}km`,
     );
 
     line.on("click", () => openCourse(course.id));
@@ -758,7 +805,7 @@ function renderCourseList(items) {
       <p>
         <span class="chip ${course.difficulty}">${course.difficultyText}</span>
         <strong> ${course.region}</strong>
-        <span>${course.sourceFolder ? ` · ${course.sourceFolder}` : ""}</span>
+        <span>${getCourseSourceLabel(course) ? ` · ${getCourseSourceLabel(course)}` : ""}</span>
       </p>
       <p>${course.sourceFile ? `<small>출처: ${course.sourceFile}</small><br/>` : ""}고도 ${course.elevation}m · 거리 ${course.lengthKm}km · 상승 ${course.gain}m</p>
     `;
@@ -797,7 +844,7 @@ function renderDetail(course) {
     <h2>${course.name}</h2>
     <p><strong>난이도</strong> : ${course.difficultyText}</p>
     <p><strong>지역</strong> : ${course.region}</p>
-    <p><strong>폴더</strong> : ${course.sourceFolder || "-"}</p>
+    <p><strong>폴더</strong> : ${getCourseSourceLabel(course) || "-"}</p>
     <p><strong>정점 높이</strong> : ${course.elevation.toLocaleString("ko-KR")}m</p>
     <p><strong>원본 파일</strong> : ${course.sourceFile || "-"}</p>
     <p><strong>거리</strong> : ${course.lengthKm}km · <strong>예상 상승량</strong> : ${course.gain}m</p>
@@ -849,6 +896,7 @@ function normalizeImportedCourse(item, index) {
     name: resolvedName,
     region: item.region || reference?.region || "",
     sourceFolder: item.sourceFolder || "",
+    sourceCategory: item.sourceCategory || "",
     sourceFile: item.sourceFile || "",
     elevation: Number.isFinite(elevation) ? elevation : 0,
     route,
@@ -895,19 +943,36 @@ function loadCoursesFromJson(text) {
 
 async function loadCoursesFromGpx(files) {
   const candidates = [];
+  const skipped = [];
+  const errors = [];
+
   for (const file of files) {
     const fileMeta = getGpxFileMeta(file);
-    const text = await file.text();
-    const parsed = parseGpxFile(text, fileMeta);
-    if (!parsed.length) continue;
-    candidates.push(...parsed);
+    const sourceCategory = String(fileMeta.sourceCategory || "").toUpperCase();
+
+    if (!allowedGpxFolders.has(sourceCategory)) {
+      skipped.push(fileMeta.relativePath || fileMeta.fileName || "unknown.gpx");
+      continue;
+    }
+
+    try {
+      const text = await file.text();
+      const parsed = parseGpxFile(text, fileMeta);
+      if (parsed.length) {
+        candidates.push(...parsed);
+      }
+    } catch (error) {
+      errors.push(
+        `${fileMeta.fileName || "unknown.gpx"}: ${error instanceof Error ? error.message : "파싱 실패"}`,
+      );
+    }
   }
 
-  if (!candidates.length) {
-    throw new Error("GPX에서 표시 가능한 코스 데이터가 없습니다.");
-  }
-
-  return candidates.map((course, index) => ({ ...course, id: index + 1 }));
+  return {
+    courses: candidates.map((course, index) => ({ ...course, id: index + 1 })),
+    skipped,
+    errors,
+  };
 }
 
 function toggleFavorite(id) {
@@ -991,11 +1056,6 @@ function initFilters() {
     render();
   });
 
-  loadDataBtn.addEventListener("click", () => {
-    setCourses(rawCourses.map(normalizeCourse));
-    render();
-  });
-
   jsonInput.addEventListener("change", async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -1005,10 +1065,11 @@ function initFilters() {
       const nextCourses = loadCoursesFromJson(text);
       setCourses(nextCourses);
       render();
-      alert("JSON 데이터로 교체했습니다.");
+      setStatusMessage("JSON 파일을 불러와 코스를 교체했습니다.", "success");
     } catch (error) {
-      alert(
+      setStatusMessage(
         `JSON 파싱 실패: ${error instanceof Error ? error.message : "형식이 올바른지 확인해 주세요."}`,
+        "error",
       );
     } finally {
       jsonInput.value = "";
@@ -1020,13 +1081,29 @@ function initFilters() {
     if (!files.length) return;
 
     try {
-      const nextCourses = await loadCoursesFromGpx(files);
+      const { courses: nextCourses, skipped, errors } = await loadCoursesFromGpx(files);
+      if (!nextCourses.length) {
+        const reason = skipped.length
+          ? `${skipped.length}개 파일이 A1/A2 폴더가 아니어서 건너뛰었습니다.`
+          : "";
+        setStatusMessage(`표시할 수 있는 코스가 없습니다.${reason ? ` ${reason}` : ""}`, "error");
+        return;
+      }
+
       setCourses(nextCourses);
       render();
-      alert(`${nextCourses.length}개 코스를 GPX에서 불러왔습니다.`);
+      const summary = [`GPX에서 ${nextCourses.length}개 코스를 불러왔습니다.`];
+      if (skipped.length) summary.push(`건너뜀 ${skipped.length}개`);
+      if (errors.length) summary.push(`실패 ${errors.length}개`);
+      setStatusMessage(summary.join(" / "), errors.length ? "error" : "success");
+
+      if (errors.length) {
+        console.warn("GPX 파싱 오류:", errors);
+      }
     } catch (error) {
-      alert(
+      setStatusMessage(
         `GPX 파싱 실패: ${error instanceof Error ? error.message : "형식이 올바른지 확인해 주세요."}`,
+        "error",
       );
     } finally {
       gpxInput.value = "";
@@ -1041,6 +1118,7 @@ function initApp() {
   totalCountEl.textContent = courses.length.toString();
   visibleCountEl.textContent = courses.length.toString();
   state.selectedId = null;
+  setStatusMessage("GPX 업로드: A1/A2 폴더만 불러오면 목록과 경로를 표시합니다.", "info");
   render();
 }
 

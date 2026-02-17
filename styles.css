@@ -104,8 +104,12 @@ body {
 
 .actions {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: 1fr 1fr;
   gap: 8px;
+}
+
+.actions .file-label {
+  grid-column: 1 / -1;
 }
 
 .actions button,
@@ -124,6 +128,39 @@ body {
 .actions .file-label:hover,
 #jsonInput:hover {
   background: #334155;
+}
+
+.status {
+  margin: 8px 0 4px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: #0f172a;
+  color: var(--sub);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.status:empty {
+  display: none;
+}
+
+.status--info {
+  background: rgba(14, 165, 233, 0.12);
+  border-color: rgba(14, 165, 233, 0.35);
+  color: #7dd3fc;
+}
+
+.status--success {
+  background: rgba(34, 197, 94, 0.12);
+  border-color: rgba(34, 197, 94, 0.35);
+  color: #86efac;
+}
+
+.status--error {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.35);
+  color: #fecaca;
 }
 
 #jsonInput {
