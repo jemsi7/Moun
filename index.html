@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>한국 100대명산 코스 지도</title>
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css"
+      crossorigin=""
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="panel">
+        <header class="panel__header">
+          <h1>한국 100대명산 코스 지도</h1>
+          <p>지도 위 코스 조회 · 검색 · 상세 확인</p>
+        </header>
+
+        <section class="control">
+          <label for="search">검색</label>
+          <input
+            id="search"
+            type="search"
+            placeholder="산명, 지역, 높이"
+            autocomplete="off"
+          />
+
+          <div class="row">
+            <div class="field">
+              <label for="regionFilter">지역</label>
+              <select id="regionFilter">
+                <option value="">전체</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label for="mountainFolderFilter">산(폴더)</label>
+              <select id="mountainFolderFilter">
+                <option value="">전체</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label for="difficultyFilter">난이도</label>
+              <select id="difficultyFilter">
+                <option value="all">전체</option>
+                <option value="easy">쉬움</option>
+                <option value="medium">보통</option>
+                <option value="hard">어려움</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="distanceFilter">
+              최대 거리: <span id="distanceValue">0</span>km
+            </label>
+            <input id="distanceFilter" type="range" min="3" max="18" value="18" />
+            <small>거리 범위를 좁혀 원하는 코스만 조회하세요</small>
+          </div>
+
+          <div class="row">
+            <div class="field">
+              <label for="sortBy">정렬</label>
+              <select id="sortBy">
+                <option value="name">이름순</option>
+                <option value="height">높이순</option>
+                <option value="distance">거리순</option>
+              </select>
+            </div>
+
+            <div class="field checkbox">
+              <label>
+                <input id="favoriteOnly" type="checkbox" />
+                즐겨찾기만
+              </label>
+            </div>
+          </div>
+
+          <div class="actions">
+            <button id="loadDataBtn" type="button">기본데이터 복원</button>
+            <button id="fitAllBtn" type="button">전체코스 보기</button>
+            <button id="resetFiltersBtn" type="button">필터 초기화</button>
+          </div>
+
+          <div class="actions">
+            <label for="jsonInput" class="file-label">JSON 데이터 불러오기</label>
+            <input id="jsonInput" type="file" accept="application/json" />
+          </div>
+
+          <div class="actions">
+            <label for="gpxInput" class="file-label">산림청 GPX 파일 불러오기</label>
+            <input
+              id="gpxInput"
+              type="file"
+              accept=".gpx,.gpx+xml,application/gpx+xml,application/xml"
+              multiple
+              webkitdirectory
+            />
+            <small>산림청 100대명산 폴더(산명 폴더 구조)를 선택해 한 번에 불러올 수 있습니다.</small>
+          </div>
+        </section>
+
+        <section class="stats">
+          <div>
+            <strong id="totalCount">0</strong>
+            <span>/ 100</span>
+            <span>건</span>
+          </div>
+          <div>표시 코스: <strong id="visibleCount">0</strong>개</div>
+        </section>
+
+        <section class="course-list" id="courseList"></section>
+
+        <section class="detail" id="detailPanel">
+          <h2>코스 상세</h2>
+          <p>왼쪽 목록에서 코스를 선택하면 상세 정보가 표시됩니다.</p>
+        </section>
+      </aside>
+
+      <main class="map-wrap">
+        <div id="map"></div>
+      </main>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="script.js"></script>
+  </body>
+</html>
